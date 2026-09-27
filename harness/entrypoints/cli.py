@@ -15,11 +15,11 @@ import typer
 
 from harness.bootstrap import Harness, build_harness
 from harness.config import get_settings
-from harness.constants import ADK_CONFIRMATION_CALL
+from harness.constants import ADK_CONFIRMATION_CALL, TraceEventType
 from harness.domain.model import RunStatus
 from harness.observability import configure_logging
 from harness.service_layer.service import HarnessService
-from harness.views import HistoryItem, RunView
+from harness.views import HistoryItem, RunView, TraceEventView
 
 app = typer.Typer(add_completion=False, help="Ops agent harness")
 
@@ -93,13 +93,58 @@ def show(run_id: str) -> None:
     _run_with_service(work)
 
 
+def _trace_details(e: TraceEventView) -> str:
+    p = e.payload
+    if e.type == TraceEventType.MODEL_CALL:
+        calls = ", ".join(f["name"] for f in p.get("function_calls") or [])
+        tokens = f"  tokens {p['prompt_tokens']}+{p['output_tokens']}" if p.get("prompt_tokens") else ""
+        return (f"calls {calls}" if calls else "final answer") + tokens
+    if e.type == TraceEventType.TOOL_CALL:
+        if not p.get("executed"):
+            result = p.get("result") or {}
+            if "requires confirmation" in str(result.get("error", "")):
+                return "paused for approval"
+            return f"not executed: {result.get('error_type') or result.get('error', '')}"
+        approved = f"  approved={p['approved']}" if p.get("approved") is not None else ""
+        return f"status={p.get('status')}  attempts={p.get('attempts')}{approved}"
+    if e.type == TraceEventType.APPROVAL_REQUESTED:
+        return "waiting for a human"
+    if e.type == TraceEventType.APPROVAL_DECIDED:
+        reason = f"  reason: {p['reason']}" if p.get("reason") else ""
+        return f"approved={p.get('approved')} by {p.get('decided_by')}{reason}"
+    if e.type in (TraceEventType.TOOL_ERROR, TraceEventType.LIMIT_EXCEEDED, TraceEventType.RUN_STATUS):
+        return str(p.get("error") or p.get("detail") or "")
+    return ""
+
+
+def _print_trace_table(events: list[TraceEventView]) -> None:
+    typer.echo(f"{'time':8}  {'event':19} {'name':22} {'ms':>6}  details")
+    typer.echo("-" * 90)
+    tools_by_approval = {
+        e.payload.get("approval_id"): e.name for e in events if e.type == TraceEventType.APPROVAL_REQUESTED
+    }
+    for e in events:
+        if e.type in (TraceEventType.INVOCATION_START, TraceEventType.INVOCATION_END):
+            continue
+        ms = f"{e.latency_ms:.0f}" if e.latency_ms is not None else ""
+        # approval events are named by approval id; show the tool the approval is about
+        name = tools_by_approval.get(e.name or "", e.name or "")
+        typer.echo(f"{e.ts:%H:%M:%S}  {e.type:19} {name[:22]:22} {ms:>6}  {_trace_details(e)}")
+
+
 @app.command()
-def trace(run_id: str) -> None:
-    """Print the execution trace of a run as JSON lines."""
+def trace(
+    run_id: str, table: bool = typer.Option(False, "--table", help="Readable table instead of JSON lines")
+) -> None:
+    """Print the execution trace of a run (JSON lines by default)."""
 
     async def work(svc: HarnessService) -> None:
-        for event in await svc.get_trace(run_id):
-            typer.echo(event.model_dump_json())
+        events = await svc.get_trace(run_id)
+        if table:
+            _print_trace_table(events)
+        else:
+            for event in events:
+                typer.echo(event.model_dump_json())
 
     _run_with_service(work)
 

@@ -127,7 +127,8 @@ cp .env.example .env                 # then edit the LLM settings
 harness run "Customers report slow checkout. Investigate payment-api and open an incident if needed."
 # → shows the proposed create_incident call and asks: Approve this call? [y/N]
 harness show <run_id>
-harness trace <run_id>
+harness trace <run_id>               # JSON lines
+harness trace <run_id> --table       # readable table: latency, tokens, retry attempts, approvals
 ```
 
 ### API
@@ -167,7 +168,7 @@ Tests replace the LLM with `ScriptedLlm` so each scenario is deterministic. `pyt
 | `integration/test_approval.py` | approve, reject (reason reaches the model), 409 / 404, resume after restart, parallel approvals, dedup, executed-call metric |
 | `integration/test_limits.py` | max LLM calls, max tool calls, identical-call loop, wall-clock budget, hung model call (hard timeout) |
 | `e2e/test_api.py` | REST flow, request validation, fault injection endpoint |
-| `e2e/test_cli.py` | interactive approve / reject prompts, `show`, `trace` |
+| `e2e/test_cli.py` | interactive approve / reject prompts, `show`, `trace`, `trace --table` |
 
 Lint and format: `ruff check harness tests && ruff format --check harness tests`.
 CI (`.github/workflows/ci.yml`) runs lint plus the test suite on SQLite and on a Postgres service container.

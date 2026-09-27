@@ -53,3 +53,17 @@ def test_cli_show_and_trace(monkeypatch, database_url):
 
     assert "status=completed" in shown.output
     assert '"type":"run_started"' in traced.output
+
+
+def test_cli_trace_table_is_readable(monkeypatch, database_url):
+    use_service(monkeypatch, database_url)
+    runner = CliRunner()
+    output = runner.invoke(cli.app, ["run", OBJECTIVE, "--auto-approve"]).output
+    run_id = next(line.split()[1] for line in output.splitlines() if line.startswith("run "))
+
+    table = runner.invoke(cli.app, ["trace", run_id, "--table"]).output
+
+    assert "paused for approval" in table
+    assert "approval_decided    create_incident" in table
+    assert "approved=True by cli" in table
+    assert "attempts=1  approved=True" in table
