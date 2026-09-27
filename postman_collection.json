@@ -1,0 +1,118 @@
+{
+  "info": {
+    "name": "Ops Agent Harness",
+    "description": "Start the API with `uvicorn harness.entrypoints.api:app`. Requests run in order: create a run, approve/reject the pending incident, inspect trace. run_id and approval_id are captured automatically.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8000" },
+    { "key": "run_id", "value": "" },
+    { "key": "approval_id", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "request": { "method": "GET", "url": "{{base_url}}/health" }
+    },
+    {
+      "name": "1. Create run (degraded service -> needs approval)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "const body = pm.response.json();",
+              "pm.test('201 Created', () => pm.response.to.have.status(201));",
+              "pm.collectionVariables.set('run_id', body.run_id);",
+              "if (body.pending_approvals.length) { pm.collectionVariables.set('approval_id', body.pending_approvals[0].approval_id); }",
+              "pm.test('status is awaiting_approval or completed', () => pm.expect(['awaiting_approval','completed']).to.include(body.status));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "url": "{{base_url}}/runs",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"objective\": \"Customers report slow checkout. Investigate payment-api and open an incident if needed.\",\n  \"user_id\": \"postman\"\n}"
+        }
+      }
+    },
+    {
+      "name": "2a. Approve pending tool call",
+      "event": [
+        {
+          "listen": "test",
+          "script": { "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));"] }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "url": "{{base_url}}/runs/{{run_id}}/approvals/{{approval_id}}",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"decision\": \"approve\",\n  \"decided_by\": \"alice\"\n}" }
+      }
+    },
+    {
+      "name": "2b. Reject pending tool call (use on a fresh run instead of 2a)",
+      "request": {
+        "method": "POST",
+        "url": "{{base_url}}/runs/{{run_id}}/approvals/{{approval_id}}",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"decision\": \"reject\",\n  \"decided_by\": \"alice\",\n  \"reason\": \"Already tracked in INC-0001\"\n}"
+        }
+      }
+    },
+    {
+      "name": "3. Get run (status, approvals, history)",
+      "request": { "method": "GET", "url": "{{base_url}}/runs/{{run_id}}" }
+    },
+    {
+      "name": "4. Get run trace",
+      "request": { "method": "GET", "url": "{{base_url}}/runs/{{run_id}}/trace" }
+    },
+    {
+      "name": "List runs",
+      "request": { "method": "GET", "url": "{{base_url}}/runs" }
+    },
+    {
+      "name": "List incidents (mock external system)",
+      "request": { "method": "GET", "url": "{{base_url}}/incidents" }
+    },
+    {
+      "name": "Healthy service (no incident)",
+      "request": {
+        "method": "POST",
+        "url": "{{base_url}}/runs",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"objective\": \"Some users cannot log in. Check auth-service.\"\n}" }
+      }
+    },
+    {
+      "name": "Failure demo: inject transient + timeout faults",
+      "request": {
+        "method": "POST",
+        "url": "{{base_url}}/debug/faults",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"tool\": \"get_service_status\",\n  \"faults\": [\"transient\", \"timeout\"]\n}" }
+      }
+    },
+    {
+      "name": "Failure demo: clear faults",
+      "request": { "method": "DELETE", "url": "{{base_url}}/debug/faults" }
+    },
+    {
+      "name": "Validation error: empty objective (422)",
+      "request": {
+        "method": "POST",
+        "url": "{{base_url}}/runs",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"objective\": \"\"\n}" }
+      }
+    }
+  ]
+}

@@ -1,0 +1,72 @@
+[
+  {
+    "id": "KB-001",
+    "title": "payment-api: high latency runbook",
+    "service": "payment-api",
+    "tags": ["latency", "timeout", "slow", "payment"],
+    "content": "Symptoms: p95 latency above 800ms. Check the database connection pool (max 50), then the downstream fraud-check dependency. Mitigation: scale payment-api to 6 replicas and enable the fraud-check circuit breaker. Open a SEV-2 incident if customer-facing checkout errors exceed 2%."
+  },
+  {
+    "id": "KB-002",
+    "title": "payment-api: 5xx error spike",
+    "service": "payment-api",
+    "tags": ["error", "5xx", "outage", "payment"],
+    "content": "If the 5xx rate exceeds 5% for 5 minutes, roll back the last deployment with `deployctl rollback payment-api`. Page the payments on-call. Severity: high when checkout is blocked."
+  },
+  {
+    "id": "KB-003",
+    "title": "auth-service: login failures",
+    "service": "auth-service",
+    "tags": ["login", "auth", "token", "401"],
+    "content": "Most login failures come from expired signing keys. Verify the JWKS endpoint and rotate keys with `authctl rotate-keys`. If all logins fail, treat as critical."
+  },
+  {
+    "id": "KB-004",
+    "title": "order-service: queue backlog",
+    "service": "order-service",
+    "tags": ["queue", "backlog", "kafka", "lag", "order"],
+    "content": "Consumer lag above 10k messages indicates stuck consumers. Restart the consumer group, then check for poison messages in the dead-letter topic. Backlog without customer impact is low severity."
+  },
+  {
+    "id": "KB-005",
+    "title": "inventory-db: replication lag",
+    "service": "inventory-db",
+    "tags": ["database", "replication", "lag", "inventory"],
+    "content": "Replication lag above 30s causes stale stock counts. Pause heavy batch jobs, check replica disk IO. Promote a new replica if lag keeps growing for 15 minutes."
+  },
+  {
+    "id": "KB-006",
+    "title": "notification-service: email delays",
+    "service": "notification-service",
+    "tags": ["email", "notification", "delay", "smtp"],
+    "content": "Email delays are usually SMTP provider throttling. Check provider status page and switch to the secondary provider in the config flag `notify.smtp.secondary=true`. Low severity unless OTP emails are affected."
+  },
+  {
+    "id": "KB-007",
+    "title": "Incident severity guidelines",
+    "service": null,
+    "tags": ["severity", "incident", "policy", "sev"],
+    "content": "critical: full outage or data loss. high: major feature broken for many users. medium: degraded performance or partial impact. low: minor issue with workaround. Always search for a runbook before opening an incident and include the service status in the description."
+  },
+  {
+    "id": "KB-008",
+    "title": "On-call escalation policy",
+    "service": null,
+    "tags": ["oncall", "escalation", "pager", "policy"],
+    "content": "Page primary on-call for high and critical incidents. Escalate to the secondary after 15 minutes without acknowledgement. Medium and low incidents go to the team queue."
+  },
+  {
+    "id": "KB-009",
+    "title": "search-service: degraded relevance",
+    "service": "search-service",
+    "tags": ["search", "index", "relevance"],
+    "content": "Poor search relevance after a deploy usually means the index alias points to a partial index. Re-point the alias to the last complete index with `searchctl alias --latest-complete`."
+  },
+  {
+    "id": "KB-010",
+    "title": "General health check procedure",
+    "service": null,
+    "tags": ["health", "status", "check", "monitoring"],
+    "content": "1) Check service status dashboard. 2) Compare error rate and latency to the 7-day baseline. 3) Check recent deployments. 4) Search the knowledge base for a service-specific runbook."
+  }
+]
